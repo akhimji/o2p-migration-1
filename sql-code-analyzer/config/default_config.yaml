@@ -1,0 +1,38 @@
+database:
+  type: oracle
+  connection:
+    host: localhost
+    port: 1521
+    service_name: orcl
+    username: user
+    password: password
+
+sql:
+  normalize: true
+  split_statements: true
+  supported_operations:
+    - SELECT
+    - INSERT
+    - UPDATE
+    - DELETE
+
+maven:
+  enabled: true
+  dependencies:
+    - groupId: org.springframework
+      artifactId: spring-jdbc
+      version: 5.3.10
+    - groupId: com.oracle.database.jdbc
+      artifactId: ojdbc8
+      version: 19.8.0.0
+
+weblogic:
+  enabled: true
+  config_files:
+    - config.xml
+    - weblogic.xml
+
+reporting:
+  output_format: markdown
+  include_schema_patterns: true
+  summary_level: detailed

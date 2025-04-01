@@ -1,0 +1,6 @@
+sqlparse
+regex
+pyyaml
+tree-sitter
+pytest
+sqlalchemy

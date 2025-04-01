@@ -1,0 +1,4 @@
+sql-code-analyzer/.DS_Store
+sql-code-analyzer/repos/*
+sql-code-analyzer/.venv/*
+*.pyc
