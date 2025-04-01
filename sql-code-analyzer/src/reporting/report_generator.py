@@ -1,4 +1,5 @@
-from typing import List, Dict
+from typing import List, Dict, Any
+import re
 from models.sql_query import SQLQuery
 from analyzers.sql_analyzer import SQLAnalyzer
 
@@ -42,3 +43,78 @@ class ReportGenerator:
         """Generate a detailed report of SQL queries"""
         # More detailed report implementation
         pass
+    
+    def generate_config_report(self, config_info: Dict[str, Any]) -> str:
+        """Generate a report of configuration findings"""
+        report = []
+        
+        # Database connections section
+        report.append("\n== Database Connections ==")
+        if config_info["connection_strings"]:
+            report.append(f"Found {len(config_info['connection_strings'])} connection strings:")
+            
+            for i, conn in enumerate(config_info["connection_strings"][:5], 1):  # Show first 5
+                report.append(f"\n{i}. {conn.get('name', 'Unnamed')} ({conn.get('database_type', 'Unknown database')})")
+                report.append(f"   Source: {conn.get('source_file', 'Unknown')}")
+                
+                # Show a sanitized version of the connection string
+                if 'connection_string' in conn:
+                    sanitized = self._sanitize_connection_string(conn['connection_string'])
+                    report.append(f"   Connection: {sanitized}")
+            
+            if len(config_info["connection_strings"]) > 5:
+                report.append(f"\n...and {len(config_info['connection_strings']) - 5} more connection strings")
+        else:
+            report.append("No connection strings found.")
+        
+        # Databases section
+        report.append("\n== Detected Databases ==")
+        if config_info["databases"]:
+            for db in sorted(config_info["databases"]):
+                report.append(f"- {db.upper()}")
+        else:
+            report.append("No specific database technologies detected.")
+        
+        # Dependencies section
+        report.append("\n== Key Dependencies ==")
+        for dep_type, deps in config_info["dependencies"].items():
+            if deps:
+                report.append(f"\n{dep_type.upper()} Dependencies:")
+                
+                # For Maven/Gradle dependencies
+                if dep_type in ['maven', 'gradle']:
+                    # Group by groupId
+                    groups = {}
+                    for dep in deps:
+                        group = dep.get('groupId', 'unknown')
+                        if group not in groups:
+                            groups[group] = []
+                        groups[group].append(dep)
+                    
+                    # Show top groups
+                    top_groups = sorted(groups.items(), key=lambda x: len(x[1]), reverse=True)[:5]
+                    for group, group_deps in top_groups:
+                        report.append(f"- {group}: {len(group_deps)} artifacts")
+                
+                # For npm dependencies
+                elif dep_type == 'npm':
+                    # Count by type
+                    prod_deps = [d for d in deps if d.get('type') == 'dependencies']
+                    dev_deps = [d for d in deps if d.get('type') == 'devDependencies']
+                    report.append(f"- {len(prod_deps)} production dependencies")
+                    report.append(f"- {len(dev_deps)} development dependencies")
+        
+        return "\n".join(report)
+    
+    def _sanitize_connection_string(self, conn_str: str) -> str:
+        """Sanitize connection string to hide sensitive information"""
+        # Replace password in JDBC URLs
+        sanitized = re.sub(r'password=([^;]+)', r'password=*****', conn_str, flags=re.IGNORECASE)
+        
+        # Replace password in key-value formatted strings
+        sanitized = re.sub(r'Password=([^;]+)', r'Password=*****', sanitized, flags=re.IGNORECASE)
+        
+        # Replace password in connection strings with embedded credentials
+        sanitized = re.sub(r'://[^:]+:([^@]+)@', r'://*****:*****@', sanitized)
+        
+        return sanitized

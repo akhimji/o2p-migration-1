@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from scanner.java_scanner import JavaScanner
 from scanner.dotnet_scanner import DotNetScanner
+from scanner.config_scanner import ConfigScanner
 from parsers.sql_parser import SQLParser
 from analyzers.sql_analyzer import SQLAnalyzer
 from reporting.report_generator import ReportGenerator
@@ -86,8 +87,25 @@ def main():
     project_type = detect_project_type(Path(project_path))
     print(f"Detected project type: {project_type.upper()}")
     
-    # Initialize components
+    # Scan for configuration files regardless of project type
+    print("Scanning for configuration files...")
+    config_scanner = ConfigScanner(project_path)
+    config_info = config_scanner.scan()
+    
+    # Detect project type using config information if available
+    if not project_type or project_type == 'unknown':
+        # Try to infer project type from config files
+        if config_info["build_tools"].get("maven", {}).get("detected", False):
+            project_type = 'java'
+            print("Project type determined from Maven configuration: JAVA")
+        elif any(db.startswith("dot") for db in config_info["frameworks"].keys()):
+            project_type = 'dotnet'
+            print("Project type determined from .NET configuration: .NET")
+    
+    # Create the appropriate scanner
     scanner = create_appropriate_scanner(project_path, project_type)
+    
+    # Initialize components
     sql_parser = SQLParser()
     sql_analyzer = SQLAnalyzer()
     report_gen = ReportGenerator()
@@ -100,10 +118,36 @@ def main():
     print("Detecting technology stack...")
     tech_stack = scanner.get_tech_stack_info()
     
+    # Merge tech stack information from code scanner and config scanner
+    tech_stack.update(config_info["frameworks"])
+    tech_stack.update(config_info["build_tools"])
+    
+    # Add database information
+    if config_info["databases"]:
+        tech_stack["databases"] = {
+            "detected": bool(config_info["databases"]),
+            "types": list(config_info["databases"])
+        }
+    
+    # Add connection strings information
+    if config_info["connection_strings"]:
+        tech_stack["connection_strings"] = {
+            "detected": True,
+            "count": len(config_info["connection_strings"])
+        }
+    
     # Display tech stack summary
     print("\n=== Technology Stack ===")
     for tech, info in tech_stack.items():
-        if info.get("detected", False):
+        if isinstance(info, dict) and info.get("detected", False):
+            if tech == "databases":
+                db_types = ", ".join(info.get("types", []))
+                print(f"✓ Databases detected: {db_types}")
+            elif tech == "connection_strings":
+                print(f"✓ Connection strings found: {info.get('count', 0)}")
+            else:
+                print(f"✓ {tech.replace('_', ' ').capitalize()} detected")
+        elif isinstance(info, bool) and info:
             print(f"✓ {tech.replace('_', ' ').capitalize()} detected")
         else:
             print(f"✗ {tech.replace('_', ' ').capitalize()} not detected")
@@ -129,12 +173,15 @@ def main():
     try:
         analyzed_queries = sql_analyzer.analyze_queries(parsed_queries)
         
-        # Generate report
-        print("Generating SQL analysis report...")
-        report = report_gen.generate_summary_report(analyzed_queries)
+        # Generate reports
+        print("Generating analysis reports...")
+        sql_report = report_gen.generate_summary_report(analyzed_queries)
+        config_report = report_gen.generate_config_report(config_info)
         
         print("\n=== SQL Analysis Report ===")
-        print(report)
+        print(sql_report)
+        print("\n=== Configuration Analysis ===")
+        print(config_report)
         print("===========================")
         
         # Ask user if they want to save the report
@@ -143,10 +190,20 @@ def main():
             report_path = Path(project_path) / "sql_analysis_report.txt"
             with open(report_path, 'w') as f:
                 f.write("=== SQL Analysis Report ===\n")
-                f.write(report)
+                f.write(sql_report)
+                f.write("\n\n=== Configuration Analysis ===\n")
+                f.write(config_report)
                 f.write("\n\n=== Technology Stack ===\n")
                 for tech, info in tech_stack.items():
-                    if info.get("detected", False):
+                    if isinstance(info, dict) and info.get("detected", False):
+                        if tech == "databases":
+                            db_types = ", ".join(info.get("types", []))
+                            f.write(f"✓ Databases detected: {db_types}\n")
+                        elif tech == "connection_strings":
+                            f.write(f"✓ Connection strings found: {info.get('count', 0)}\n")
+                        else:
+                            f.write(f"✓ {tech.replace('_', ' ').capitalize()} detected\n")
+                    elif isinstance(info, bool) and info:
                         f.write(f"✓ {tech.replace('_', ' ').capitalize()} detected\n")
                     else:
                         f.write(f"✗ {tech.replace('_', ' ').capitalize()} not detected\n")
@@ -157,7 +214,9 @@ def main():
             json_data = {
                 "project_type": project_type,
                 "queries": [query.to_dict() for query in analyzed_queries],
-                "tech_stack": tech_stack
+                "tech_stack": tech_stack,
+                "connection_strings": config_info["connection_strings"],
+                "dependencies": config_info["dependencies"]
             }
             with open(json_path, 'w') as f:
                 json.dump(json_data, f, indent=2)
