@@ -5,17 +5,18 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from models.sql_query import SQLQuery
+from scanner.base_scanner import BaseScanner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('JavaScanner')
 
-class JavaScanner:
+class JavaScanner(BaseScanner):
     """Scanner for extracting SQL queries from Java source files"""
     
     def __init__(self, base_path: str):
-        self.base_path = Path(base_path)
+        super().__init__(base_path)
         self.java_files = []
         self.sql_queries = []
         

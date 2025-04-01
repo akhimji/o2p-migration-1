@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from scanner.java_scanner import JavaScanner
+from scanner.dotnet_scanner import DotNetScanner
 from parsers.sql_parser import SQLParser
 from analyzers.sql_analyzer import SQLAnalyzer
 from reporting.report_generator import ReportGenerator
@@ -16,6 +17,53 @@ from reporting.report_generator import ReportGenerator
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('SQLCodeAnalyzer')
+
+def detect_project_type(project_path: Path) -> str:
+    """
+    Detect the primary technology of the project
+    Returns: 'java', 'dotnet', or 'unknown'
+    """
+    logger.info(f"Detecting project type in {project_path}")
+    
+    # Count relevant files for each technology
+    java_files = list(project_path.glob("**/*.java"))
+    pom_files = list(project_path.glob("**/pom.xml"))
+    gradle_files = list(project_path.glob("**/*.gradle"))
+    
+    dotnet_files = list(project_path.glob("**/*.cs"))
+    dotnet_files.extend(project_path.glob("**/*.vb"))
+    csproj_files = list(project_path.glob("**/*.csproj"))
+    vbproj_files = list(project_path.glob("**/*.vbproj"))
+    sln_files = list(project_path.glob("**/*.sln"))
+    
+    # Score each technology
+    java_score = len(java_files) * 1 + len(pom_files) * 10 + len(gradle_files) * 10
+    dotnet_score = len(dotnet_files) * 1 + len(csproj_files) * 10 + len(vbproj_files) * 10 + len(sln_files) * 10
+    
+    logger.info(f"Project type detection - Java score: {java_score}, .NET score: {dotnet_score}")
+    
+    # Determine project type
+    if java_score > dotnet_score and java_score > 0:
+        return 'java'
+    elif dotnet_score > 0:
+        return 'dotnet'
+    else:
+        return 'unknown'
+
+def create_appropriate_scanner(project_path: str, project_type: str = None):
+    """Create and return the appropriate scanner based on project type"""
+    if not project_type:
+        project_type = detect_project_type(Path(project_path))
+    
+    if project_type == 'java':
+        logger.info("Using Java scanner for this project")
+        return JavaScanner(project_path)
+    elif project_type == 'dotnet':
+        logger.info("Using .NET scanner for this project")
+        return DotNetScanner(project_path)
+    else:
+        logger.warning("Could not determine project type, defaulting to Java scanner")
+        return JavaScanner(project_path)
 
 def main():
     print("=== SQL Code Analyzer ===")
@@ -34,27 +82,31 @@ def main():
     
     print(f"Analyzing project at: {project_path}")
     
+    # Detect project type and create appropriate scanner
+    project_type = detect_project_type(Path(project_path))
+    print(f"Detected project type: {project_type.upper()}")
+    
     # Initialize components
-    java_scanner = JavaScanner(project_path)
+    scanner = create_appropriate_scanner(project_path, project_type)
     sql_parser = SQLParser()
     sql_analyzer = SQLAnalyzer()
     report_gen = ReportGenerator()
     
     # Scan for SQL queries
     print(f"Scanning files in {project_path}...")
-    sql_queries = java_scanner.scan()
+    sql_queries = scanner.scan()
     
     # Detect tech stack information
     print("Detecting technology stack...")
-    tech_stack = java_scanner.get_tech_stack_info()
+    tech_stack = scanner.get_tech_stack_info()
     
     # Display tech stack summary
     print("\n=== Technology Stack ===")
     for tech, info in tech_stack.items():
         if info.get("detected", False):
-            print(f"✓ {tech.capitalize()} detected")
+            print(f"✓ {tech.replace('_', ' ').capitalize()} detected")
         else:
-            print(f"✗ {tech.capitalize()} not detected")
+            print(f"✗ {tech.replace('_', ' ').capitalize()} not detected")
     
     # Make sure we have results before proceeding with SQL analysis
     if not sql_queries:
@@ -95,14 +147,15 @@ def main():
                 f.write("\n\n=== Technology Stack ===\n")
                 for tech, info in tech_stack.items():
                     if info.get("detected", False):
-                        f.write(f"✓ {tech.capitalize()} detected\n")
+                        f.write(f"✓ {tech.replace('_', ' ').capitalize()} detected\n")
                     else:
-                        f.write(f"✗ {tech.capitalize()} not detected\n")
+                        f.write(f"✗ {tech.replace('_', ' ').capitalize()} not detected\n")
             print(f"Report saved to {report_path}")
             
             # Save detailed JSON data for further processing
             json_path = Path(project_path) / "sql_analysis_data.json"
             json_data = {
+                "project_type": project_type,
                 "queries": [query.to_dict() for query in analyzed_queries],
                 "tech_stack": tech_stack
             }
