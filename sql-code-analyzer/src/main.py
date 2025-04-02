@@ -189,19 +189,37 @@ def main():
     try:
         analyzed_queries = sql_analyzer.analyze_queries(parsed_queries)
         
+        # Get tech stack information
+        tech_stack_info = scanner.get_tech_stack_info() if hasattr(scanner, 'get_tech_stack_info') else {}
+        
+        # Extract connection strings if available (assuming we have a function for this)
+        connection_strings = []
+        if hasattr(scanner, 'get_connection_strings'):
+            connection_strings = scanner.get_connection_strings()
+        
         # Generate reports
         report_generator = ReportGenerator()
         
         # Generate JSON report
         if args.json_report:
             json_file = args.json_report
-            report_generator.generate_json_report(sql_queries, json_file)
+            report_generator.generate_json_report(
+                sql_queries, 
+                tech_stack_info=tech_stack_info,
+                connection_strings=connection_strings,
+                output_file=json_file
+            )
             logger.info(f"JSON report saved to {json_file}")
         
         # Generate HTML report
         if args.html_report:
             html_file = args.html_report
-            report_generator.generate_html_report(sql_queries, html_file)
+            report_generator.generate_html_report(
+                sql_queries, 
+                tech_stack_info=tech_stack_info,
+                connection_strings=connection_strings,
+                output_file=html_file
+            )
             logger.info(f"HTML report saved to {html_file}")
             
     except Exception as e:

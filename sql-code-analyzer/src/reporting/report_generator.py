@@ -109,9 +109,18 @@ class ReportGenerator:
         
         return "\n".join(report)
     
-    def generate_json_report(self, queries: List[SQLQuery], output_file: str = None) -> str:
+    def generate_json_report(self, queries: List[SQLQuery], tech_stack_info: Dict = None, connection_strings: List[str] = None, output_file: str = None) -> str:
         """
         Generate a JSON report of SQL queries with Oracle feature detection
+        
+        Args:
+            queries: List of SQL query objects
+            tech_stack_info: Dictionary with tech stack detection results
+            connection_strings: List of detected connection strings
+            output_file: Path to save the JSON report
+            
+        Returns:
+            JSON string of the report
         """
         # Convert queries to dictionaries
         queries_dict = [query.to_dict() for query in queries]
@@ -130,6 +139,14 @@ class ReportGenerator:
             "queries": queries_dict
         }
         
+        # Add tech stack info if available
+        if tech_stack_info:
+            report["tech_stack"] = tech_stack_info
+        
+        # Add connection strings if available
+        if connection_strings:
+            report["connection_strings"] = connection_strings
+        
         # Format as JSON
         json_data = json.dumps(report, indent=2)
         
@@ -140,9 +157,18 @@ class ReportGenerator:
         
         return json_data
     
-    def generate_html_report(self, queries: List[SQLQuery], output_file: str = None) -> str:
+    def generate_html_report(self, queries: List[SQLQuery], tech_stack_info: Dict = None, connection_strings: List[str] = None, output_file: str = None) -> str:
         """
         Generate an HTML report of SQL queries with Oracle feature detection
+        
+        Args:
+            queries: List of SQL query objects
+            tech_stack_info: Dictionary with tech stack detection results
+            connection_strings: List of detected connection strings
+            output_file: Path to save the HTML report
+            
+        Returns:
+            HTML string of the report
         """
         # Count types
         query_types = self._count_query_types(queries)
@@ -174,6 +200,8 @@ class ReportGenerator:
                 .chart { width: 100%; height: 300px; margin-bottom: 20px; }
                 .oracle-badge { background-color: #ff9800; color: white; padding: 3px 8px; 
                                 border-radius: 12px; font-size: 0.85rem; }
+                .conn-string { background-color: #e8f5e9; padding: 8px; border-left: 3px solid #4caf50;
+                              font-family: monospace; margin: 5px 0; }
                 .nav-tabs { display: flex; margin-bottom: 20px; }
                 .tab { padding: 10px 15px; cursor: pointer; border: 1px solid #ddd; 
                        background-color: #f8f9fa; }
@@ -184,6 +212,8 @@ class ReportGenerator:
                 .file-list { list-style-type: none; padding: 0; }
                 .file-list li { padding: 5px 0; border-bottom: 1px solid #eee; }
                 .oracle-summary { margin-top: 20px; }
+                .tech-item { margin-bottom: 10px; }
+                .tech-files { font-size: 0.9em; color: #666; margin-left: 15px; }
             </style>
         </head>
         <body>
@@ -213,7 +243,11 @@ class ReportGenerator:
             
         html += """
                 </table>
-                
+        """
+        
+        # Add Oracle features if any were found
+        if oracle_features:
+            html += """
                 <h3>Oracle Features</h3>
                 <table>
                     <tr>
@@ -221,27 +255,50 @@ class ReportGenerator:
                         <th>Count</th>
                         <th>Description</th>
                     </tr>
-        """
-        
-        # Add Oracle features to table
-        for feature in oracle_features:
-            html += f"""
-                    <tr>
-                        <td>{feature['name']}</td>
-                        <td>{feature['count']}</td>
-                        <td>{feature['description']}</td>
-                    </tr>
             """
             
-        html += """
+            # Add Oracle features to table
+            for feature in oracle_features:
+                html += f"""
+                        <tr>
+                            <td>{feature['name']}</td>
+                            <td>{feature['count']}</td>
+                            <td>{feature['description']}</td>
+                        </tr>
+                """
+                
+            html += """
                 </table>
+            """
+        
+        html += """
             </div>
             
             <div class="nav-tabs">
                 <div class="tab active" onclick="showTab('all-queries')">All Queries</div>
                 <div class="tab" onclick="showTab('oracle-queries')">Oracle Queries</div>
                 <div class="tab" onclick="showTab('files')">Files</div>
+        """
+        
+        # Add Oracle Features tab if any were found
+        if oracle_features:
+            html += """
                 <div class="tab" onclick="showTab('oracle-features')">Oracle Features</div>
+            """
+            
+        # Add Tech Stack tab if info was provided
+        if tech_stack_info:
+            html += """
+                <div class="tab" onclick="showTab('tech-stack')">Tech Stack</div>
+            """
+            
+        # Add Connection Strings tab if any were provided
+        if connection_strings:
+            html += """
+                <div class="tab" onclick="showTab('connections')">Connection Strings</div>
+            """
+        
+        html += """
             </div>
             
             <div id="all-queries" class="tab-content active">
@@ -279,7 +336,10 @@ class ReportGenerator:
         
         html += """
             </div>
-            
+        """
+        
+        # Oracle Queries tab
+        html += """
             <div id="oracle-queries" class="tab-content">
                 <h2>Oracle-Specific Queries</h2>
         """
@@ -314,7 +374,10 @@ class ReportGenerator:
         
         html += """
             </div>
-            
+        """
+        
+        # Files tab
+        html += """
             <div id="files" class="tab-content">
                 <h2>Files with SQL Queries</h2>
         """
@@ -344,7 +407,11 @@ class ReportGenerator:
         html += """
                 </ul>
             </div>
-            
+        """
+        
+        # Oracle Features tab (if any features were found)
+        if oracle_features:
+            html += """
             <div id="oracle-features" class="tab-content">
                 <h2>Oracle Features Analysis</h2>
                 
@@ -357,40 +424,148 @@ class ReportGenerator:
                             <th>Description</th>
                             <th>Files</th>
                         </tr>
-        """
-        
-        # Get files per Oracle feature
-        feature_files = {}
-        for query in queries:
-            if not query.is_oracle_specific:
-                continue
-                
-            for feature in query.oracle_features:
-                feature_name = feature['name']
-                if feature_name not in feature_files:
-                    feature_files[feature_name] = set()
-                feature_files[feature_name].add(query.source_file)
-        
-        # Add Oracle features with file counts
-        for feature in oracle_features:
-            feature_name = feature['name']
-            files = feature_files.get(feature_name, set())
-            file_count = len(files)
-            
-            html += f"""
-                        <tr>
-                            <td>{feature_name}</td>
-                            <td>{feature['count']}</td>
-                            <td>{feature['description']}</td>
-                            <td>{file_count} {'' if file_count == 1 else 'files'}</td>
-                        </tr>
             """
-        
-        html += """
+            
+            # Get files per Oracle feature
+            feature_files = {}
+            for query in queries:
+                if not query.is_oracle_specific:
+                    continue
+                    
+                for feature in query.oracle_features:
+                    feature_name = feature['name']
+                    if feature_name not in feature_files:
+                        feature_files[feature_name] = set()
+                    feature_files[feature_name].add(query.source_file)
+            
+            # Add Oracle features with file counts
+            for feature in oracle_features:
+                feature_name = feature['name']
+                files = feature_files.get(feature_name, set())
+                file_count = len(files)
+                
+                html += f"""
+                            <tr>
+                                <td>{feature_name}</td>
+                                <td>{feature['count']}</td>
+                                <td>{feature['description']}</td>
+                                <td>{file_count} {'' if file_count == 1 else 'files'}</td>
+                            </tr>
+                """
+            
+            html += """
                     </table>
                 </div>
             </div>
+            """
+        
+        # Tech Stack tab (if info was provided)
+        if tech_stack_info:
+            html += """
+            <div id="tech-stack" class="tab-content">
+                <h2>Technology Stack</h2>
+            """
             
+            # Java tech stack
+            if "java" in tech_stack_info or "spring" in tech_stack_info or "hibernate" in tech_stack_info:
+                html += """
+                <h3>Java Technologies</h3>
+                """
+                
+                # Check for specific Java technologies
+                for tech_name in ["java", "spring", "hibernate", "jpa", "mybatis", "jdbc_direct"]:
+                    if tech_name in tech_stack_info and tech_stack_info[tech_name].get("detected", False):
+                        tech_info = tech_stack_info[tech_name]
+                        files = tech_info.get("files", [])
+                        
+                        html += f"""
+                        <div class="tech-item">
+                            <strong>{tech_name.replace('_', ' ').title()}</strong>: Detected
+                        """
+                        
+                        if files:
+                            html += """
+                            <div class="tech-files">
+                                Files: 
+                            """
+                            for file in files[:3]:  # Show first 3 files
+                                html += f"<code>{file}</code>, "
+                            if len(files) > 3:
+                                html += f"... and {len(files)-3} more"
+                            html += """
+                            </div>
+                            """
+                            
+                        html += """
+                        </div>
+                        """
+                
+                # Check for build systems
+                for build_system in ["maven", "gradle"]:
+                    if build_system in tech_stack_info and tech_stack_info[build_system].get("detected", False):
+                        html += f"""
+                        <div class="tech-item">
+                            <strong>{build_system.title()} Build</strong>: Detected
+                        </div>
+                        """
+            
+            # .NET tech stack
+            if "dotnet_framework" in tech_stack_info or "dotnet_core" in tech_stack_info:
+                html += """
+                <h3>.NET Technologies</h3>
+                """
+                
+                # Check for specific .NET technologies
+                for tech_name in ["dotnet_framework", "dotnet_core", "asp_net", "entity_framework", "dapper", "ado_net"]:
+                    if tech_name in tech_stack_info and tech_stack_info[tech_name].get("detected", False):
+                        tech_info = tech_stack_info[tech_name]
+                        files = tech_info.get("files", [])
+                        
+                        html += f"""
+                        <div class="tech-item">
+                            <strong>{tech_name.replace('_', ' ').title()}</strong>: Detected
+                        """
+                        
+                        if files:
+                            html += """
+                            <div class="tech-files">
+                                Files: 
+                            """
+                            for file in files[:3]:  # Show first 3 files
+                                html += f"<code>{file}</code>, "
+                            if len(files) > 3:
+                                html += f"... and {len(files)-3} more"
+                            html += """
+                            </div>
+                            """
+                            
+                        html += """
+                        </div>
+                        """
+            
+            html += """
+            </div>
+            """
+        
+        # Connection Strings tab (if any were provided)
+        if connection_strings:
+            html += """
+            <div id="connections" class="tab-content">
+                <h2>Database Connection Strings</h2>
+                <p>The following connection strings were detected in the source code:</p>
+            """
+            
+            for conn_str in connection_strings:
+                html += f"""
+                <div class="conn-string">{conn_str}</div>
+                """
+                
+            html += """
+            </div>
+            """
+        
+        # Add JavaScript for tab navigation
+        html += """
             <script>
                 function showTab(tabId) {
                     // Hide all tab contents

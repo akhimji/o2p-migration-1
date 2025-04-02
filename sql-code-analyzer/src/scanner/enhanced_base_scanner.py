@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from validators.sql_validator import SQLValidator
 from validators.sqlparse_validator import SqlParseValidator
 from models.sql_query import SQLQuery
+from scanner.connection_detector import ConnectionStringDetector
 
 logger = logging.getLogger('EnhancedBaseScanner')
 
@@ -141,6 +142,11 @@ class EnhancedBaseScanner(ABC):
         
         # Fallback to our custom validator
         return self.sql_validator.get_query_type(query_text)
+    
+    def get_connection_strings(self) -> List[str]:
+        """Find database connection strings in the project"""
+        detector = ConnectionStringDetector()
+        return detector.scan_directory(self.base_path)
     
     @abstractmethod
     def scan(self) -> List[SQLQuery]:
