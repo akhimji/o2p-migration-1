@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from reporting.html_report_generator import HTMLReportGenerator
+from reporting.report_generator import ReportGenerator
 import argparse
 
 # Add the parent directory to sys.path to enable imports
@@ -14,7 +15,6 @@ from scanner.dotnet_scanner import DotNetScanner
 from scanner.config_scanner import ConfigScanner
 from parsers.sql_parser import SQLParser
 from analyzers.sql_analyzer import SQLAnalyzer
-from reporting.report_generator import ReportGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -70,6 +70,8 @@ def main():
     parser.add_argument('--html', action='store_true', help='Generate HTML report')
     parser.add_argument('--output', '-o', help='Output directory for reports')
     parser.add_argument('--no-sqlparse', action='store_true', help='Disable sqlparse library for validation')
+    parser.add_argument('--json-report', help='Path to save JSON report')
+    parser.add_argument('--html-report', help='Path to save HTML report')
     args = parser.parse_args()
     
     print("=== SQL Code Analyzer ===")
@@ -188,85 +190,20 @@ def main():
         analyzed_queries = sql_analyzer.analyze_queries(parsed_queries)
         
         # Generate reports
-        print("Generating analysis reports...")
-        sql_report = report_gen.generate_summary_report(analyzed_queries)
-        config_report = report_gen.generate_config_report(config_info)
+        report_generator = ReportGenerator()
         
-        # Display text report
-        print("\n=== SQL Analysis Report ===")
-        print(sql_report)
-        print("\n=== Configuration Analysis ===")
-        print(config_report)
-        print("===========================")
+        # Generate JSON report
+        if args.json_report:
+            json_file = args.json_report
+            report_generator.generate_json_report(sql_queries, json_file)
+            logger.info(f"JSON report saved to {json_file}")
         
-        # Ask user if they want to save the report, unless HTML was specified
-        generate_reports = True
-        if not args.html:
-            save_report = input("\nWould you like to save the report? (y/n): ").strip()
-            generate_reports = save_report.lower() == 'y'
-        
-        if generate_reports:
-            # Save text report
-            report_path = output_dir / "sql_analysis_report.txt"
-            with open(report_path, 'w') as f:
-                f.write("=== SQL Analysis Report ===\n")
-                f.write(sql_report)
-                f.write("\n\n=== Configuration Analysis ===\n")
-                f.write(config_report)
-                f.write("\n\n=== Technology Stack ===\n")
-                for tech, info in tech_stack.items():
-                    if isinstance(info, dict) and info.get("detected", False):
-                        if tech == "databases":
-                            db_types = ", ".join(info.get("types", []))
-                            f.write(f"✓ Databases detected: {db_types}\n")
-                        elif tech == "connection_strings":
-                            f.write(f"✓ Connection strings found: {info.get('count', 0)}\n")
-                        else:
-                            f.write(f"✓ {tech.replace('_', ' ').capitalize()} detected\n")
-                    elif isinstance(info, bool) and info:
-                        f.write(f"✓ {tech.replace('_', ' ').capitalize()} detected\n")
-                    else:
-                        f.write(f"✗ {tech.replace('_', ' ').capitalize()} not detected\n")
-            print(f"Text report saved to {report_path}")
+        # Generate HTML report
+        if args.html_report:
+            html_file = args.html_report
+            report_generator.generate_html_report(sql_queries, html_file)
+            logger.info(f"HTML report saved to {html_file}")
             
-            # Save detailed JSON data
-            json_path = output_dir / "sql_analysis_data.json"
-            json_data = {
-                "project_type": project_type,
-                "queries": [query.to_dict() for query in analyzed_queries],
-                "tech_stack": tech_stack,
-                "connection_strings": config_info["connection_strings"],
-                "dependencies": config_info["dependencies"]
-            }
-            with open(json_path, 'w') as f:
-                json.dump(json_data, f, indent=2)
-            print(f"JSON data saved to {json_path}")
-            
-            # Generate HTML report if requested
-            if args.html:
-                html_gen = HTMLReportGenerator()
-                print("Generating HTML report...")
-                html_content = html_gen.generate_html_report(
-                    sql_queries=[query.to_dict() for query in analyzed_queries],
-                    tech_stack=tech_stack,
-                    connection_strings=config_info["connection_strings"],
-                    dependencies=config_info["dependencies"],
-                    project_type=project_type,
-                    project_path=project_path
-                )
-                
-                html_path = output_dir / "sql_analysis_report.html"
-                html_gen.write_html_report(html_content, html_path)
-                print(f"HTML report saved to {html_path}")
-                
-                # Try to open the HTML report in the default browser
-                try:
-                    import webbrowser
-                    webbrowser.open(f"file://{html_path}")
-                    print("Opening HTML report in your browser...")
-                except:
-                    pass
-                
     except Exception as e:
         logger.error(f"Error during analysis: {e}")
         print(f"\nError during analysis: {e}")

@@ -2,3 +2,5 @@ sql-code-analyzer/.DS_Store
 sql-code-analyzer/repos/*
 sql-code-analyzer/.venv/*
 *.pyc
+sql-code-analyzer/report.html
+sql-code-analyzer/report.json

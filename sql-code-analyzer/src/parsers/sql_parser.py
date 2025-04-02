@@ -1,13 +1,14 @@
 import re
 from typing import List, Dict, Any, Set
 from models.sql_query import SQLQuery
+# Fix the import for OracleFeatureDetector
+from parsers.oracle_detector import OracleFeatureDetector
 
 class SQLParser:
     """Parser for SQL queries that extracts key information"""
     
     def __init__(self):
-        # Patterns for query types already set earlier in the scanner
-        # but we'll keep some simple additional patterns here
+        # Patterns for query types
         self.query_type_patterns = {
             "SELECT": re.compile(r'^\s*SELECT', re.IGNORECASE),
             "INSERT": re.compile(r'^\s*INSERT', re.IGNORECASE),
@@ -79,6 +80,9 @@ class SQLParser:
             "UPDATE": re.compile(r'SET\s+(.*?)(?:WHERE|$)', re.IGNORECASE | re.DOTALL),
             "CREATE": re.compile(r'CREATE\s+TABLE\s+[^\(]*\(([^\)]*)\)', re.IGNORECASE | re.DOTALL)
         }
+        
+        # Initialize Oracle detector
+        self.oracle_detector = OracleFeatureDetector()
     
     def identify_query_type(self, query_text: str) -> str:
         """Identify the type of SQL query"""
@@ -245,6 +249,13 @@ class SQLParser:
         # Extract columns (if appropriate for this query type)
         if query.query_type in self.column_patterns:
             query.columns = self.extract_columns(query.query_text, query.query_type)
+        
+        # Detect Oracle-specific features
+        oracle_features = self.oracle_detector.summarize_oracle_features(query.query_text)
+        if oracle_features:
+            query.is_oracle_specific = True
+            query.oracle_features = oracle_features
+            query.oracle_feature_count = len(oracle_features)
         
         # Mark as parsed
         query.parsed = True

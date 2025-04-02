@@ -15,6 +15,11 @@ class SQLQuery:
         self.risk_score = 0.0
         self.performance_issues = []
         self.security_issues = []
+        
+        # Oracle-specific data
+        self.is_oracle_specific = False
+        self.oracle_features = []
+        self.oracle_feature_count = 0
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the query object to a dictionary"""
@@ -29,11 +34,16 @@ class SQLQuery:
             "complexity_score": self.complexity_score,
             "risk_score": self.risk_score,
             "performance_issues": self.performance_issues,
-            "security_issues": self.security_issues
+            "security_issues": self.security_issues,
+            # Oracle-specific fields
+            "is_oracle_specific": self.is_oracle_specific,
+            "oracle_features": self.oracle_features,
+            "oracle_feature_count": self.oracle_feature_count
         }
     
     def __str__(self) -> str:
         """String representation of the query"""
         query_type = self.query_type or "UNKNOWN"
         tables = ", ".join(self.tables) if self.tables else "Unknown"
-        return f"[{query_type}] from {self.source_file} - Tables: {tables}"
+        oracle_note = " (Oracle-specific)" if self.is_oracle_specific else ""
+        return f"[{query_type}]{oracle_note} from {self.source_file} - Tables: {tables}"
