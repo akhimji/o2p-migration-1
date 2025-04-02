@@ -4,3 +4,4 @@ pyyaml
 tree-sitter
 pytest
 sqlalchemy
+sqlparse>=0.4.4

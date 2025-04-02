@@ -2,72 +2,163 @@ import os
 import re
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Pattern
+import sys
+
+# Add project root to path if needed
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from models.sql_query import SQLQuery
+from scanner.enhanced_base_scanner import EnhancedBaseScanner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('DotNetScanner')
 
-class DotNetScanner:
-    """Scanner for extracting SQL queries from .NET source files"""
+class DotNetScanner(EnhancedBaseScanner):
+    """Scanner for extracting SQL queries from .NET source files with enhanced detection"""
     
-    def __init__(self, base_path: str):
-        self.base_path = Path(base_path)
+    def __init__(self, base_path: str, use_sqlparse: bool = True):
+        super().__init__(base_path, use_sqlparse)
         self.dotnet_files = []
         self.sql_queries = []
         
         # Extensions to scan
-        self.file_extensions = ['.cs', '.vb', '.cshtml', '.vbhtml', '.aspx', '.ascx']
+        self.file_extensions = ['.cs', '.vb', '.cshtml', '.vbhtml', '.aspx', '.ascx', '.razor']
         
-        # SQL patterns specific to .NET codebases
-        self.sql_patterns = [
-            # C# string assignments with SQL
-            r'string\s+\w+\s*=\s*@?"(SELECT\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(INSERT\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(UPDATE\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(DELETE\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(CREATE\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(ALTER\s+.*?)"[;\)]',
-            r'string\s+\w+\s*=\s*@?"(DROP\s+.*?)"[;\)]',
-            
-            # ADO.NET and related patterns
-            r'SqlCommand\(.+?"(.*?)"[,\)]',
-            r'new\s+SqlCommand\(\s*@?"(.*?)"[,\)]',
-            r'ExecuteReader\(\s*@?"(.*?)"[,\)]',
-            r'ExecuteNonQuery\(\s*@?"(.*?)"[,\)]',
-            r'ExecuteScalar\(\s*@?"(.*?)"[,\)]',
-            
-            # ORM-related patterns (Entity Framework, Dapper)
-            r'FromSql(?:Raw)?\(\s*@?"(.*?)"[,\)]',
-            r'Query(?:<.*?>)?\(\s*@?"(.*?)"[,\)]',
-            r'Execute(?:Scalar|Reader|NonQuery)?(?:<.*?>)?\(\s*@?"(.*?)"[,\)]',
-            
-            # Named SQL query variables
-            r'(?:sql|query|sqlQuery|sqlStatement|commandText)\s*=\s*@?"(SELECT\s+.*?)"[;\)]',
-            r'(?:sql|query|sqlQuery|sqlStatement|commandText)\s*=\s*@?"(INSERT\s+.*?)"[;\)]',
-            r'(?:sql|query|sqlQuery|sqlStatement|commandText)\s*=\s*@?"(UPDATE\s+.*?)"[;\)]',
-            r'(?:sql|query|sqlQuery|sqlStatement|commandText)\s*=\s*@?"(DELETE\s+.*?)"[;\)]',
-            
-            # Dapper specific
-            r'(?:Query|Execute|QueryFirst|QuerySingle|QueryMultiple)\(\s*@?"(.*?)"[,\)]',
+        # Create regex patterns
+        self.sql_patterns = self._create_dotnet_sql_patterns()
+    
+    def _create_dotnet_sql_patterns(self) -> List[Pattern]:
+        """Create regex patterns for detecting SQL in .NET code"""
+        patterns = []
+        
+        # C# & VB.NET string assignments with SQL keywords
+        for command_prefix in self.sql_command_prefixes:
+            # Regular string (C#)
+            patterns.append(
+                re.compile(f'(?:string|var)\\s+\\w+\\s*=\\s*"({command_prefix}.*?)"[;\\)]', re.IGNORECASE | re.DOTALL)
+            )
+            # Verbatim string (C# @"...")
+            patterns.append(
+                re.compile(f'(?:string|var)\\s+\\w+\\s*=\\s*@"({command_prefix}.*?)"[;\\)]', re.IGNORECASE | re.DOTALL)
+            )
+            # VB.NET string assignment
+            patterns.append(
+                re.compile(f'(?:Dim|Private|Public)\\s+\\w+\\s+As\\s+String\\s*=\\s*"({command_prefix}.*?)"', re.IGNORECASE | re.DOTALL)
+            )
+            # Interpolated strings (C# $"...")
+            patterns.append(
+                re.compile(f'(?:string|var)\\s+\\w+\\s*=\\s*\\$"({command_prefix}.*?)"[;\\)]', re.IGNORECASE | re.DOTALL)
+            )
+        
+        # Common SQL-related variable names
+        sql_var_names = [
+            'sql', 'query', 'sqlQuery', 'sqlString', 'sqlStatement', 'queryString', 
+            'selectSql', 'insertSql', 'updateSql', 'deleteSql', 'ddlQuery', 'sqlText',
+            'commandText', 'sqlCommand', 'storedProcedure', 'commandString'
         ]
         
-        # Verbatim string patterns (to handle @"..." in C#)
-        self.verbatim_patterns = [
-            r'@"(SELECT\s+.*?)"',
-            r'@"(INSERT\s+.*?)"',
-            r'@"(UPDATE\s+.*?)"',
-            r'@"(DELETE\s+.*?)"',
-        ]
+        sql_var_pattern = '|'.join(sql_var_names)
         
-        # Pattern to identify common SQL keywords to qualify a string as SQL
-        self.sql_keyword_pattern = re.compile(
-            r'SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|GROUP BY|ORDER BY|HAVING', 
-            re.IGNORECASE
+        # SQL assigned to variables with SQL-related names (C#)
+        patterns.append(
+            re.compile(f'(?:{sql_var_pattern})\\s*=\\s*"(.*?)"[;\\)]', re.IGNORECASE | re.DOTALL)
         )
+        
+        # SQL assigned to variables with SQL-related names (C# verbatim strings)
+        patterns.append(
+            re.compile(f'(?:{sql_var_pattern})\\s*=\\s*@"(.*?)"[;\\)]', re.IGNORECASE | re.DOTALL)
+        )
+        
+        # SQL assigned to variables with SQL-related names (VB.NET)
+        patterns.append(
+            re.compile(f'(?:{sql_var_pattern})\\s*=\\s*"(.*?)"(?:\\s*&\\s*".*?")*', re.IGNORECASE | re.DOTALL)
+        )
+        
+        # ADO.NET SqlCommand
+        patterns.append(
+            re.compile(r'new\s+SqlCommand\s*\(\s*@?"(.*?)"[,\)]', re.IGNORECASE | re.DOTALL)
+        )
+        patterns.append(
+            re.compile(r'new\s+SqlCommand\s*\{\s*CommandText\s*=\s*@?"(.*?)"', re.IGNORECASE | re.DOTALL)
+        )
+        patterns.append(
+            re.compile(r'\.CommandText\s*=\s*@?"(.*?)"', re.IGNORECASE | re.DOTALL)
+        )
+        
+        # ADO.NET method calls
+        ado_methods = [
+            'ExecuteReader', 'ExecuteNonQuery', 'ExecuteScalar', 'ExecuteDataSet',
+            'ExecuteDataTable', 'Execute'
+        ]
+        
+        for method in ado_methods:
+            patterns.append(
+                re.compile(f'{method}\\(\\s*@?"(.*?)"', re.IGNORECASE | re.DOTALL)
+            )
+            patterns.append(
+                re.compile(f'{method}\\(\\s*\\$"(.*?)"', re.IGNORECASE | re.DOTALL)
+            )
+        
+        # Entity Framework
+        ef_methods = [
+            'ExecuteSqlCommand', 'ExecuteSqlCommandAsync', 'ExecuteSqlRaw', 
+            'ExecuteSqlRawAsync', 'FromSql', 'FromSqlRaw', 'FromSqlInterpolated'
+        ]
+        
+        for method in ef_methods:
+            patterns.append(
+                re.compile(f'{method}\\(\\s*@?"(.*?)"', re.IGNORECASE | re.DOTALL)
+            )
+        
+        # Dapper methods
+        dapper_methods = [
+            'Query', 'QueryFirst', 'QueryFirstOrDefault', 'QuerySingle', 'QuerySingleOrDefault',
+            'QueryMultiple', 'Execute', 'ExecuteScalar', 'ExecuteReader'
+        ]
+        
+        for method in dapper_methods:
+            patterns.append(
+                re.compile(f'\\.{method}(?:<.*?>)?\\(\\s*@?"(.*?)"', re.IGNORECASE | re.DOTALL)
+            )
+        
+        # Multi-line string concat in VB.NET
+        patterns.append(
+            re.compile(r'(?:Dim|Private|Public)\s+\w+\s+As\s+String\s*=\s*"([^"]*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER)[^"]*)(?:"\s*&\s*"[^"]*")+', 
+                     re.IGNORECASE | re.DOTALL)
+        )
+        
+        # String.Format with SQL
+        patterns.append(
+            re.compile(r'String\.Format\(\s*@?"([^"]*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER)[^"]*)"', 
+                     re.IGNORECASE | re.DOTALL)
+        )
+        
+        # StringBuilder append with SQL
+        patterns.append(
+            re.compile(r'(?:StringBuilder|StringWriter).*?\.Append(?:Line)?\(\s*@?"([^"]*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER)[^"]*)"', 
+                     re.IGNORECASE | re.DOTALL)
+        )
+        
+        # Stored Procedures
+        patterns.append(
+            re.compile(r'CommandType\s*=\s*CommandType\.StoredProcedure.*?CommandText\s*=\s*@?"(.*?)"', 
+                     re.IGNORECASE | re.DOTALL)
+        )
+        patterns.append(
+            re.compile(r'CommandText\s*=\s*@?"(.*?)".*?CommandType\s*=\s*CommandType\.StoredProcedure', 
+                     re.IGNORECASE | re.DOTALL)
+        )
+        
+        # C# raw string literals (C# 11+)
+        for command_prefix in self.sql_command_prefixes:
+            patterns.append(
+                re.compile(f'(?:string|var)\\s+\\w+\\s*=\\s*"""({command_prefix}.*?)"""', re.IGNORECASE | re.DOTALL)
+            )
+        
+        return patterns
     
     def find_dotnet_files(self) -> List[Path]:
         """Find all .NET related files in the project directory"""
@@ -86,14 +177,6 @@ class DotNetScanner:
             logger.error(f"Error finding .NET files: {e}")
             return []
     
-    def is_valid_sql_query(self, query_text: str) -> bool:
-        """Validate if a string is likely a SQL query"""
-        # Basic validation - check if it contains common SQL keywords
-        if not query_text or len(query_text) < 10:
-            return False
-            
-        return bool(self.sql_keyword_pattern.search(query_text))
-    
     def extract_sql_from_file(self, file_path: Path) -> List[SQLQuery]:
         """Extract SQL queries from a .NET file"""
         queries = []
@@ -102,39 +185,35 @@ class DotNetScanner:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # Handle C# string concatenation patterns
-            content = re.sub(r'"\s*\+\s*@?"', '', content)
-            content = re.sub(r'"\s*\+\s*"', '', content)
+            # Pre-processing
+            # Handle C# string concatenations
+            content = re.sub(r'"\s*\+\s*@?"', ' ', content)
+            content = re.sub(r'"\s*\+\s*"', ' ', content)
+            # Handle VB.NET string concatenations
+            content = re.sub(r'"\s*&\s*"', ' ', content)
             
-            # Process regular patterns
+            # Process with all patterns
             for pattern in self.sql_patterns:
-                found_queries = re.findall(pattern, content, re.IGNORECASE | re.DOTALL)
-                for query_text in found_queries:
+                matches = pattern.findall(content)
+                for match in matches:
+                    if isinstance(match, tuple):  # Some patterns might return tuples
+                        match = match[0] if match else ""
+                    
                     # Clean and validate the query
-                    clean_query = query_text.strip().replace('\n', ' ').replace('\r', '')
+                    clean_query = match.strip().replace('\n', ' ').replace('\r', '')
                     
                     if self.is_valid_sql_query(clean_query):
                         # Create SQLQuery object
                         relative_path = file_path.relative_to(self.base_path)
+                        
+                        # Detect query type
+                        query_type = self.detect_query_type(clean_query)
+                        
                         query = SQLQuery(
                             query_text=clean_query,
                             source_file=str(relative_path),
-                            language=".NET"
-                        )
-                        queries.append(query)
-            
-            # Special handling for verbatim strings (@"...") which may contain SQL
-            for pattern in self.verbatim_patterns:
-                found_queries = re.findall(pattern, content, re.IGNORECASE | re.DOTALL)
-                for query_text in found_queries:
-                    clean_query = query_text.strip()
-                    
-                    if self.is_valid_sql_query(clean_query):
-                        relative_path = file_path.relative_to(self.base_path)
-                        query = SQLQuery(
-                            query_text=clean_query,
-                            source_file=str(relative_path),
-                            language=".NET"
+                            language=".NET",
+                            query_type=query_type
                         )
                         queries.append(query)
                     
@@ -198,6 +277,10 @@ class DotNetScanner:
             "dapper": {
                 "detected": False, 
                 "files": []
+            },
+            "ado_net": {
+                "detected": False,
+                "files": []
             }
         }
         
@@ -241,7 +324,9 @@ class DotNetScanner:
         web_config_files = list(self.base_path.glob("**/web.config"))
         aspx_files = list(self.base_path.glob("**/*.aspx"))
         mvc_files = list(self.base_path.glob("**/Controllers/*.cs"))
-        if web_config_files or aspx_files or mvc_files:
+        razor_files = list(self.base_path.glob("**/*.cshtml"))
+        
+        if web_config_files or aspx_files or mvc_files or razor_files:
             tech_info["asp_net"]["detected"] = True
             files = []
             if web_config_files:
@@ -250,15 +335,18 @@ class DotNetScanner:
                 files.append(str(aspx_files[0].relative_to(self.base_path)))
             if mvc_files and len(files) < 5:
                 files.append(str(mvc_files[0].relative_to(self.base_path)))
+            if razor_files and len(files) < 5:
+                files.append(str(razor_files[0].relative_to(self.base_path)))
             tech_info["asp_net"]["files"] = files
         
-        # Sample files to check for ORM frameworks
-        sample_size = min(100, len(self.dotnet_files))  # Limit to 100 files for performance
+        # Sample files to check for ORM frameworks and data access patterns
         framework_patterns = {
             "entity_framework": re.compile(r'using\s+(?:Microsoft\.EntityFrameworkCore|System\.Data\.Entity)', re.IGNORECASE),
             "dapper": re.compile(r'using\s+Dapper', re.IGNORECASE),
+            "ado_net": re.compile(r'using\s+System\.Data\.SqlClient|SqlConnection|SqlCommand', re.IGNORECASE)
         }
         
+        sample_size = min(100, len(self.dotnet_files))  # Limit to 100 files for performance
         for file_path in self.dotnet_files[:sample_size]:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

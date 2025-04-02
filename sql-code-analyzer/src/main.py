@@ -53,20 +53,15 @@ def detect_project_type(project_path: Path) -> str:
     else:
         return 'unknown'
 
-def create_appropriate_scanner(project_path: str, project_type: str = None):
-    """Create and return the appropriate scanner based on project type"""
-    if not project_type:
-        project_type = detect_project_type(Path(project_path))
-    
-    if project_type == 'java':
-        logger.info("Using Java scanner for this project")
-        return JavaScanner(project_path)
-    elif project_type == 'dotnet':
-        logger.info("Using .NET scanner for this project")
-        return DotNetScanner(project_path)
+def create_appropriate_scanner(project_path, project_type, use_sqlparse=True):
+    """Create the appropriate scanner based on project type"""
+    if project_type == "java":
+        return JavaScanner(project_path, use_sqlparse=use_sqlparse)
+    elif project_type == "dotnet":
+        return DotNetScanner(project_path, use_sqlparse=use_sqlparse)
     else:
-        logger.warning("Could not determine project type, defaulting to Java scanner")
-        return JavaScanner(project_path)
+        # Default to a combined scanner for unknown projects
+        return CombinedScanner(project_path, use_sqlparse=use_sqlparse)
 
 def main():
     # Parse command-line arguments
@@ -74,6 +69,7 @@ def main():
     parser.add_argument('--path', '-p', help='Path to the project directory')
     parser.add_argument('--html', action='store_true', help='Generate HTML report')
     parser.add_argument('--output', '-o', help='Output directory for reports')
+    parser.add_argument('--no-sqlparse', action='store_true', help='Disable sqlparse library for validation')
     args = parser.parse_args()
     
     print("=== SQL Code Analyzer ===")
@@ -120,7 +116,8 @@ def main():
             print("Project type determined from .NET configuration: .NET")
     
     # Create the appropriate scanner
-    scanner = create_appropriate_scanner(project_path, project_type)
+    use_sqlparse = not args.no_sqlparse
+    scanner = create_appropriate_scanner(project_path, project_type, use_sqlparse=use_sqlparse)
     
     # Initialize components
     sql_parser = SQLParser()
