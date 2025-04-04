@@ -285,6 +285,7 @@ class ReportGenerator:
                 <div class="tab" onclick="showTab('oracle-features')">Oracle Features</div>
                 <div class="tab" onclick="showTab('tech-stack')">Tech Stack</div>
                 <div class="tab" onclick="showTab('connection-strings')">Connection Strings</div>
+                <div class="tab" onclick="showTab('high-risk-tables')">High-Risk Tables</div>
             </div>
             
             <div id="all-queries" class="tab-content active">
@@ -567,6 +568,76 @@ class ReportGenerator:
             html += "<p>No connection strings found in this project.</p>"
             
         html += """
+        </div>
+        
+        <!-- High-Risk Tables tab -->
+        <div id="high-risk-tables" class="tab-content">
+            <h2>High-Risk Tables</h2>
+            <p>Tables referenced in multiple queries represent potential migration risks, especially in complex applications.</p>
+            
+            <table>
+                <tr>
+                    <th>Table Name</th>
+                    <th>Query Count</th>
+                    <th>Query Types</th>
+                    <th>Risk Level</th>
+                </tr>
+"""
+
+        # Calculate table statistics
+        table_stats = {}
+        for query in queries:
+            if hasattr(query, 'tables') and query.tables:
+                for table in query.tables:
+                    if table not in table_stats:
+                        table_stats[table] = {
+                            'count': 0,
+                            'query_types': set()
+                        }
+                    table_stats[table]['count'] += 1
+                    table_stats[table]['query_types'].add(query.query_type if hasattr(query, 'query_type') else "UNKNOWN")
+
+        # Sort tables by query count (highest first)
+        sorted_tables = sorted(table_stats.items(), key=lambda x: x[1]['count'], reverse=True)
+
+        # Add top 20 most referenced tables to the table
+        for table_name, stats in sorted_tables[:20]:
+            query_count = stats['count']
+            query_types = ', '.join(stats['query_types'])
+            
+            # Determine risk level based on query count
+            if query_count > 15:
+                risk_level = 'High'
+                risk_color = '#dc3545'  # Red
+            elif query_count > 8:
+                risk_level = 'Medium'
+                risk_color = '#ffc107'  # Yellow
+            else:
+                risk_level = 'Low'
+                risk_color = '#28a745'  # Green
+            
+            html += f"""
+                        <tr>
+                            <td><strong>{table_name}</strong></td>
+                            <td>{query_count}</td>
+                            <td>{query_types}</td>
+                            <td style="color: {risk_color}; font-weight: bold;">{risk_level}</td>
+                        </tr>
+            """
+
+        html += """
+            </table>
+            
+            <div style="margin-top: 20px;">
+                <h3>Risk Assessment Criteria</h3>
+                <ul>
+                    <li><span style="color: #dc3545; font-weight: bold;">High Risk</span>: Tables referenced in more than 15 queries</li>
+                    <li><span style="color: #ffc107; font-weight: bold;">Medium Risk</span>: Tables referenced in 8-15 queries</li>
+                    <li><span style="color: #28a745; font-weight: bold;">Low Risk</span>: Tables referenced in fewer than 8 queries</li>
+                </ul>
+                <p><em>Note: Tables with different query types (SELECT, INSERT, UPDATE, DELETE) may require special attention 
+                during migration as they might have more complex dependencies.</em></p>
+            </div>
         </div>
         """
         
