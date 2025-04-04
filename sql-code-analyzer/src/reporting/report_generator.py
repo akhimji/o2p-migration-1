@@ -214,6 +214,10 @@ class ReportGenerator:
                 .oracle-summary { margin-top: 20px; }
                 .tech-item { margin-bottom: 10px; }
                 .tech-files { font-size: 0.9em; color: #666; margin-left: 15px; }
+                .tech-files code {
+                    display: block;
+                    padding: 3px 0;
+                }
             </style>
         </head>
         <body>
@@ -278,27 +282,9 @@ class ReportGenerator:
                 <div class="tab active" onclick="showTab('all-queries')">All Queries</div>
                 <div class="tab" onclick="showTab('oracle-queries')">Oracle Queries</div>
                 <div class="tab" onclick="showTab('files')">Files</div>
-        """
-        
-        # Add Oracle Features tab if any were found
-        if oracle_features:
-            html += """
                 <div class="tab" onclick="showTab('oracle-features')">Oracle Features</div>
-            """
-            
-        # Add Tech Stack tab if info was provided
-        if tech_stack_info:
-            html += """
                 <div class="tab" onclick="showTab('tech-stack')">Tech Stack</div>
-            """
-            
-        # Add Connection Strings tab if any were provided
-        if connection_strings:
-            html += """
-                <div class="tab" onclick="showTab('connections')">Connection Strings</div>
-            """
-        
-        html += """
+                <div class="tab" onclick="showTab('connection-strings')">Connection Strings</div>
             </div>
             
             <div id="all-queries" class="tab-content active">
@@ -486,9 +472,9 @@ class ReportGenerator:
                         if files:
                             html += """
                             <div class="tech-files">
-                                Files:<br> 
+                                Files:<br>
                             """
-                            for file in files[:10]:  # Show first 10 files - increased from 3
+                            for file in files[:10]:  # Show first 10 files
                                 html += f"<code>{file}</code><br>"
                             if len(files) > 10:
                                 html += f"... and {len(files)-10} more files"
@@ -529,12 +515,12 @@ class ReportGenerator:
                         if files:
                             html += """
                             <div class="tech-files">
-                                Files: 
+                                Files:<br> 
                             """
-                            for file in files[:3]:  # Show first 3 files
-                                html += f"<code>{file}</code>, "
-                            if len(files) > 3:
-                                html += f"... and {len(files)-3} more"
+                            for file in files[:10]:  # Show first 10 files instead of 3
+                                html += f"<code>{file}</code><br>"  # Use <br> instead of commas
+                            if len(files) > 10:
+                                html += f"... and {len(files)-10} more files"  # Adjusted count
                             html += """
                             </div>
                             """
@@ -548,21 +534,41 @@ class ReportGenerator:
             """
         
         # Connection Strings tab (if any were provided)
+        html += """
+        <div id="connection-strings" class="tab-content">
+            <h2>Connection Strings</h2>
+        """
+        
         if connection_strings:
-            html += """
-            <div id="connections" class="tab-content">
-                <h2>Database Connection Strings</h2>
-                <p>The following connection strings were detected in the source code:</p>
-            """
-            
-            for conn_str in connection_strings:
-                html += f"""
-                <div class="conn-string">{conn_str}</div>
-                """
+            for conn in connection_strings:
+                # Safely handle both dictionary and string formats
+                if isinstance(conn, dict):
+                    name = conn.get('name', 'Unnamed Connection')
+                    source = conn.get('source_file', 'Unknown')
+                    db_type = conn.get('database_type', 'Unknown database')
+                    conn_string = conn.get('connection_string', '')
+                else:
+                    # If it's not a dictionary (e.g., a string), use defaults
+                    name = 'Unnamed Connection'
+                    source = 'Unknown'
+                    db_type = 'Unknown database'
+                    conn_string = str(conn) if conn else ''
                 
-            html += """
-            </div>
-            """
+                # Display the connection string
+                html += f"""
+                <div class="conn-string-item">
+                    <h3>{name}</h3>
+                    <p><strong>Source:</strong> {source}</p>
+                    <p><strong>Type:</strong> {db_type}</p>
+                    <div class="conn-string">{self._sanitize_connection_string(conn_string)}</div>
+                </div>
+                """
+        else:
+            html += "<p>No connection strings found in this project.</p>"
+            
+        html += """
+        </div>
+        """
         
         # Add JavaScript for tab navigation
         html += """
@@ -640,6 +646,9 @@ class ReportGenerator:
     
     def _sanitize_connection_string(self, conn_str: str) -> str:
         """Sanitize connection string to hide sensitive information"""
+        if not conn_str or not isinstance(conn_str, str):
+            return ""
+            
         # Replace password in JDBC URLs
         sanitized = re.sub(r'password=([^;]+)', r'password=*****', conn_str, flags=re.IGNORECASE)
         
