@@ -20,6 +20,14 @@ class SQLQuery:
         self.is_oracle_specific = False
         self.oracle_features = []
         self.oracle_feature_count = 0
+
+        # New: Join information
+        self.join_types = {}  # Dictionary of join types
+        self.has_joins = False  # Flag if query has any joins
+        self.join_count = 0  # Count of join operations
+
+        # New: Complexity attribute
+        self.complexity = 0  # Initialize complexity
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the query object to a dictionary"""
@@ -38,7 +46,13 @@ class SQLQuery:
             # Oracle-specific fields
             "is_oracle_specific": self.is_oracle_specific,
             "oracle_features": self.oracle_features,
-            "oracle_feature_count": self.oracle_feature_count
+            "oracle_feature_count": self.oracle_feature_count,
+            # New: Join information
+            "join_types": self.join_types,
+            "has_joins": self.has_joins,
+            "join_count": self.join_count,
+            # New: Complexity attribute
+            "complexity": self.complexity
         }
     
     def __str__(self) -> str:

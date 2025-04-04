@@ -305,40 +305,61 @@ class ReportGenerator:
             
         html += """
                 </table>
-        """
-        
-        # Add Oracle features if any were found
-        if oracle_features:
-            html += """
-                <h3>Oracle Features</h3>
+                
+                <h3>Join Analysis</h3>
                 <table>
                     <tr>
-                        <th>Feature</th>
+                        <th>Join Type</th>
                         <th>Count</th>
-                        <th>Description</th>
                     </tr>
-            """
-            
-            # Add Oracle features to table
-            for feature in oracle_features:
+        """
+
+        # Calculate join statistics
+        join_stats = {
+            "inner_join": 0,
+            "left_join": 0,
+            "right_join": 0,
+            "full_join": 0,
+            "cross_join": 0,
+            "natural_join": 0,
+            "self_join": 0
+        }
+
+        # Count queries by join type
+        queries_with_joins = 0
+        for query in queries:
+            if hasattr(query, 'join_types') and query.has_joins:
+                queries_with_joins += 1
+                for join_type, present in query.join_types.items():
+                    if present and join_type in join_stats:
+                        join_stats[join_type] += 1
+
+        # Add join statistics to the table
+        html += f"""
+                    <tr>
+                        <td>Total Queries with Joins</td>
+                        <td>{queries_with_joins}</td>
+                    </tr>
+        """
+
+        for join_type, count in join_stats.items():
+            if count > 0:
+                readable_join = join_type.replace('_', ' ').title()
                 html += f"""
-                        <tr>
-                            <td>{feature['name']}</td>
-                            <td>{feature['count']}</td>
-                            <td>{feature['description']}</td>
-                        </tr>
-                """
-                
-            html += """
-                </table>
-            """
-        
+                    <tr>
+                        <td>{readable_join}</td>
+                        <td>{count}</td>
+                    </tr>
+        """
+
         html += """
+                </table>
             </div>
             
             <div class="nav-tabs">
                 <div class="tab active" onclick="showTab('all-queries')">All Queries</div>
                 <div class="tab" onclick="showTab('oracle-queries')">Oracle Queries</div>
+                <div class="tab" onclick="showTab('complex-queries')">Complex Joins</div>
                 <div class="tab" onclick="showTab('files')">Files</div>
                 <div class="tab" onclick="showTab('oracle-features')">Oracle Features</div>
                 <div class="tab" onclick="showTab('tech-stack')">Tech Stack</div>
@@ -425,12 +446,10 @@ class ReportGenerator:
         
         html += """
             </div>
-        """
         
-        # Oracle Queries tab
-        html += """
-            <div id="oracle-queries" class="tab-content">
-                <h2>Oracle-Specific Queries</h2>
+        <!-- Oracle Queries tab -->
+        <div id="oracle-queries" class="tab-content">
+            <h2>Oracle-Specific Queries</h2>
         """
         
         # Add Oracle queries
@@ -462,13 +481,92 @@ class ReportGenerator:
             """
         
         html += """
-            </div>
-        """
+        </div>
         
-        # Files tab
+        <!-- Complex Queries with Joins tab -->
+        <div id="complex-queries" class="tab-content">
+            <h2>Complex Queries with Joins</h2>
+            <p>Queries with complex join operations often require special attention during migration.</p>
+            
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label for="join-type-filter">Join Type:</label>
+                    <select id="join-type-filter" class="filter-select" onchange="filterJoinQueries()">
+                        <option value="all">All Join Types</option>
+                        <option value="inner_join">INNER JOIN</option>
+                        <option value="left_join">LEFT JOIN</option>
+                        <option value="right_join">RIGHT JOIN</option>
+                        <option value="full_join">FULL JOIN</option>
+                        <option value="cross_join">CROSS JOIN</option>
+                        <option value="natural_join">NATURAL JOIN</option>
+                        <option value="self_join">SELF JOIN</option>
+                        <option value="multiple_joins">MULTIPLE JOINS</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="join-complexity-filter">Minimum Complexity:</label>
+                    <select id="join-complexity-filter" class="filter-select" onchange="filterJoinQueries()">
+                        <option value="0">Any Complexity</option>
+                        <option value="2">Medium (2+)</option>
+                        <option value="3">High (3+)</option>
+                        <option value="4">Very High (4+)</option>
+                    </select>
+                </div>
+                
+                <button class="clear-filters" onclick="clearJoinFilters()">Clear Filters</button>
+            </div>
+"""
+
+        # Get queries with joins
+        join_queries = [q for q in queries if hasattr(q, 'has_joins') and q.has_joins]
+
+        # Sort by complexity (highest first)
+        join_queries.sort(key=lambda q: getattr(q, 'complexity', 0), reverse=True)
+
+        if join_queries:
+            # Add queries with joins
+            for i, query in enumerate(join_queries):
+                # Get list of join types used
+                join_types_used = [jt.replace('_', ' ').upper() for jt, used in query.join_types.items() if used and jt != "multiple_joins"]
+                join_types_str = ", ".join(join_types_used)
+                
+                # Create a complexity indicator
+                complexity = getattr(query, 'complexity', 0)
+                if complexity >= 4:
+                    complexity_badge = '<span style="background-color: #dc3545; color: white; padding: 3px 8px; border-radius: 12px;">Very High</span>'
+                elif complexity >= 3:
+                    complexity_badge = '<span style="background-color: #fd7e14; color: white; padding: 3px 8px; border-radius: 12px;">High</span>'
+                else:
+                    complexity_badge = '<span style="background-color: #ffc107; color: white; padding: 3px 8px; border-radius: 12px;">Medium</span>'
+                
+                # Create an expandable section for each join query
+                html += f"""
+                    <div class="query expandable" 
+                         data-join-types="{','.join(join_types_used).lower()}"
+                         data-complexity="{getattr(query, 'complexity', 0)}"
+                         id="join-query-{i+1}">
+                        <h3 onclick="toggleExpand(this.parentElement)">
+                            {query.query_type} with {join_types_str} [Complexity: {complexity_badge}]
+                            <span class="toggle-icon">▼</span>
+                        </h3>
+                        <div class="content">
+                            <p>File: {query.source_file}</p>
+                            <p>Tables: {', '.join(query.tables)}</p>
+                            <p>Join Count: {query.join_count}</p>
+                            <pre class="query-text">{query.query_text}</pre>
+                        </div>
+                    </div>
+                """
+        else:
+            html += "<p>No queries with joins were found in this project.</p>"
+
         html += """
-            <div id="files" class="tab-content">
-                <h2>Files with SQL Queries</h2>
+        </div>
+        
+        <!-- Files tab -->
+        <div id="files" class="tab-content">
+            <h2>Files with SQL Queries</h2>
         """
         
         # Group queries by file
@@ -818,6 +916,39 @@ class ReportGenerator:
                         queries[i].classList.add('collapsed');
                     }
                 });
+
+                // Filter join queries
+                function filterJoinQueries() {
+                    const joinTypeFilter = document.getElementById('join-type-filter').value;
+                    const complexityFilter = parseInt(document.getElementById('join-complexity-filter').value);
+                    
+                    document.querySelectorAll('#complex-queries .query').forEach(query => {
+                        const joinTypes = query.getAttribute('data-join-types');
+                        const complexity = parseInt(query.getAttribute('data-complexity'));
+                        
+                        // Check if query matches selected filters
+                        const matchesJoinType = joinTypeFilter === 'all' || 
+                                               (joinTypes && joinTypes.includes(joinTypeFilter.replace('_', ' ').toLowerCase()));
+                        const matchesComplexity = complexity >= complexityFilter;
+                        
+                        // Show or hide based on filter matches
+                        if (matchesJoinType && matchesComplexity) {
+                            query.style.display = '';
+                        } else {
+                            query.style.display = 'none';
+                        }
+                    });
+                }
+                
+                // Clear join filters
+                function clearJoinFilters() {
+                    document.getElementById('join-type-filter').value = 'all';
+                    document.getElementById('join-complexity-filter').value = '0';
+                    
+                    document.querySelectorAll('#complex-queries .query').forEach(query => {
+                        query.style.display = '';
+                    });
+                }
             </script>
         </body>
         </html>
