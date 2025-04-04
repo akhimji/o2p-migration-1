@@ -202,9 +202,9 @@ class ReportGenerator:
                                 border-radius: 12px; font-size: 0.85rem; }
                 .conn-string { background-color: #e8f5e9; padding: 8px; border-left: 3px solid #4caf50;
                               font-family: monospace; margin: 5px 0; }
-                .nav-tabs { display: flex; margin-bottom: 20px; }
+                .nav-tabs { display: flex; margin-bottom: 20px; overflow-x: auto; }
                 .tab { padding: 10px 15px; cursor: pointer; border: 1px solid #ddd; 
-                       background-color: #f8f9fa; }
+                       background-color: #f8f9fa; white-space: nowrap; }
                 .tab.active { background-color: #fff; border-bottom: none; 
                              font-weight: bold; color: #1a73e8; }
                 .tab-content { display: none; }
@@ -217,6 +217,64 @@ class ReportGenerator:
                 .tech-files code {
                     display: block;
                     padding: 3px 0;
+                }
+                
+                /* New styles for interactive components */
+                .filter-controls {
+                    background-color: #f8f9fa;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                }
+                
+                .filter-group {
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                .filter-group label {
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                }
+                
+                .filter-select, .filter-input {
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    min-width: 150px;
+                }
+                
+                .clear-filters {
+                    margin-left: auto;
+                    align-self: flex-end;
+                    background-color: #f1f1f1;
+                    border: 1px solid #ddd;
+                    padding: 8px 15px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                
+                .clear-filters:hover {
+                    background-color: #e9e9e9;
+                }
+                
+                /* Expandable sections */
+                .expandable .toggle-icon {
+                    cursor: pointer;
+                    margin-left: 5px;
+                    transition: transform 0.3s;
+                    display: inline-block;
+                }
+                
+                .expandable.collapsed .content {
+                    display: none;
+                }
+                
+                .expandable.collapsed .toggle-icon {
+                    transform: rotate(-90deg);
                 }
             </style>
         </head>
@@ -290,34 +348,78 @@ class ReportGenerator:
             
             <div id="all-queries" class="tab-content active">
                 <h2>All SQL Queries</h2>
+                
+                <!-- Add filter controls -->
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label for="query-type-filter">Query Type:</label>
+                        <select id="query-type-filter" class="filter-select">
+                            <option value="all">All Types</option>
+"""
+        # Add options for each query type
+        for qtype in query_types.keys():
+            html += f'<option value="{qtype}">{qtype}</option>\n'
+
+        html += """
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="table-filter">Table Name:</label>
+                        <input type="text" id="table-filter" class="filter-input" placeholder="Filter by table">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="file-filter">Source File:</label>
+                        <input type="text" id="file-filter" class="filter-input" placeholder="Filter by file path">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="text-filter">SQL Text:</label>
+                        <input type="text" id="text-filter" class="filter-input" placeholder="Search in SQL text">
+                    </div>
+                    
+                    <button class="clear-filters" onclick="clearFilters()">Clear Filters</button>
+                </div>
         """
         
-        # Add all queries
+        # Add all queries with expandable sections and data attributes for filtering
         for i, query in enumerate(queries, 1):
             oracle_badge = f'<span class="oracle-badge">Oracle: {query.oracle_feature_count}</span>' if query.is_oracle_specific else ''
+            tables_str = ', '.join(query.tables) if query.tables else 'Unknown'
+            query_type = query.query_type if hasattr(query, 'query_type') else "UNKNOWN"
             
             html += f"""
-                <div class="query">
-                    <h3>Query #{i} [{query.query_type}] {oracle_badge}</h3>
-                    <p>File: {query.source_file}</p>
-                    <p>Tables: {', '.join(query.tables) if query.tables else 'Unknown'}</p>
-                    <pre class="query-text">{query.query_text}</pre>
+                <div class="query expandable" 
+                     data-query-type="{query_type}" 
+                     data-tables="{tables_str.lower()}" 
+                     data-file="{query.source_file.lower()}" 
+                     id="query-{i}">
+                    <h3 onclick="toggleExpand(this.parentElement)">
+                        Query #{i} [{query_type}] {oracle_badge}
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                    <div class="content">
+                        <p>File: {query.source_file}</p>
+                        <p>Tables: {tables_str}</p>
+                        <pre class="query-text">{query.query_text}</pre>
             """
             
             if query.is_oracle_specific:
                 html += """
-                    <h4>Oracle Features</h4>
+                        <h4>Oracle Features</h4>
                 """
                 
                 for feature in query.oracle_features:
                     html += f"""
-                    <div class="oracle-feature">
-                        <strong>{feature['name']}</strong>: {feature['description']}
-                        <p>Example: <code>{feature['example']}</code></p>
-                    </div>
+                        <div class="oracle-feature">
+                            <strong>{feature['name']}</strong>: {feature['description']}
+                            <p>Example: <code>{feature['example']}</code></p>
+                        </div>
                     """
             
             html += """
+                    </div>
                 </div>
             """
         
@@ -661,6 +763,61 @@ class ReportGenerator:
                     // Activate the clicked tab
                     document.querySelector(`.tab[onclick="showTab('${tabId}')"]`).classList.add('active');
                 }
+                
+                // Toggle expandable sections
+                function toggleExpand(element) {
+                    element.classList.toggle('collapsed');
+                }
+                
+                // Filtering queries
+                function filterQueries() {
+                    const queryTypeFilter = document.getElementById('query-type-filter').value;
+                    const tableFilter = document.getElementById('table-filter').value.toLowerCase();
+                    const fileFilter = document.getElementById('file-filter').value.toLowerCase();
+                    const textFilter = document.getElementById('text-filter').value.toLowerCase();
+                    
+                    document.querySelectorAll('.query').forEach(query => {
+                        // Check if query matches all selected filters
+                        const matchesType = queryTypeFilter === 'all' || query.getAttribute('data-query-type') === queryTypeFilter;
+                        const matchesTable = tableFilter === '' || query.getAttribute('data-tables').includes(tableFilter);
+                        const matchesFile = fileFilter === '' || query.getAttribute('data-file').includes(fileFilter);
+                        const matchesText = textFilter === '' || query.querySelector('.query-text').textContent.toLowerCase().includes(textFilter);
+                        
+                        // Show or hide based on filter matches
+                        if (matchesType && matchesTable && matchesFile && matchesText) {
+                            query.style.display = '';
+                        } else {
+                            query.style.display = 'none';
+                        }
+                    });
+                }
+                
+                // Clear all filters
+                function clearFilters() {
+                    document.getElementById('query-type-filter').value = 'all';
+                    document.getElementById('table-filter').value = '';
+                    document.getElementById('file-filter').value = '';
+                    document.getElementById('text-filter').value = '';
+                    
+                    document.querySelectorAll('.query').forEach(query => {
+                        query.style.display = '';
+                    });
+                }
+                
+                // Initialize event listeners
+                document.addEventListener('DOMContentLoaded', function() {
+                    // Set up filter change listeners
+                    document.getElementById('query-type-filter').addEventListener('change', filterQueries);
+                    document.getElementById('table-filter').addEventListener('input', filterQueries);
+                    document.getElementById('file-filter').addEventListener('input', filterQueries);
+                    document.getElementById('text-filter').addEventListener('input', filterQueries);
+                    
+                    // Collapse all query sections initially except first 3
+                    const queries = document.querySelectorAll('.query.expandable');
+                    for (let i = 3; i < queries.length; i++) {
+                        queries[i].classList.add('collapsed');
+                    }
+                });
             </script>
         </body>
         </html>
