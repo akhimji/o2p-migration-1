@@ -202,9 +202,9 @@ class ReportGenerator:
                                 border-radius: 12px; font-size: 0.85rem; }
                 .conn-string { background-color: #e8f5e9; padding: 8px; border-left: 3px solid #4caf50;
                               font-family: monospace; margin: 5px 0; }
-                .nav-tabs { display: flex; margin-bottom: 20px; }
+                .nav-tabs { display: flex; margin-bottom: 20px; overflow-x: auto; }
                 .tab { padding: 10px 15px; cursor: pointer; border: 1px solid #ddd; 
-                       background-color: #f8f9fa; }
+                       background-color: #f8f9fa; white-space: nowrap; }
                 .tab.active { background-color: #fff; border-bottom: none; 
                              font-weight: bold; color: #1a73e8; }
                 .tab-content { display: none; }
@@ -214,6 +214,68 @@ class ReportGenerator:
                 .oracle-summary { margin-top: 20px; }
                 .tech-item { margin-bottom: 10px; }
                 .tech-files { font-size: 0.9em; color: #666; margin-left: 15px; }
+                .tech-files code {
+                    display: block;
+                    padding: 3px 0;
+                }
+                
+                /* New styles for interactive components */
+                .filter-controls {
+                    background-color: #f8f9fa;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 15px;
+                }
+                
+                .filter-group {
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                .filter-group label {
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                }
+                
+                .filter-select, .filter-input {
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    min-width: 150px;
+                }
+                
+                .clear-filters {
+                    margin-left: auto;
+                    align-self: flex-end;
+                    background-color: #f1f1f1;
+                    border: 1px solid #ddd;
+                    padding: 8px 15px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                
+                .clear-filters:hover {
+                    background-color: #e9e9e9;
+                }
+                
+                /* Expandable sections */
+                .expandable .toggle-icon {
+                    cursor: pointer;
+                    margin-left: 5px;
+                    transition: transform 0.3s;
+                    display: inline-block;
+                }
+                
+                .expandable.collapsed .content {
+                    display: none;
+                }
+                
+                .expandable.collapsed .toggle-icon {
+                    transform: rotate(-90deg);
+                }
             </style>
         </head>
         <body>
@@ -278,59 +340,86 @@ class ReportGenerator:
                 <div class="tab active" onclick="showTab('all-queries')">All Queries</div>
                 <div class="tab" onclick="showTab('oracle-queries')">Oracle Queries</div>
                 <div class="tab" onclick="showTab('files')">Files</div>
-        """
-        
-        # Add Oracle Features tab if any were found
-        if oracle_features:
-            html += """
                 <div class="tab" onclick="showTab('oracle-features')">Oracle Features</div>
-            """
-            
-        # Add Tech Stack tab if info was provided
-        if tech_stack_info:
-            html += """
                 <div class="tab" onclick="showTab('tech-stack')">Tech Stack</div>
-            """
-            
-        # Add Connection Strings tab if any were provided
-        if connection_strings:
-            html += """
-                <div class="tab" onclick="showTab('connections')">Connection Strings</div>
-            """
-        
-        html += """
+                <div class="tab" onclick="showTab('connection-strings')">Connection Strings</div>
+                <div class="tab" onclick="showTab('high-risk-tables')">High-Risk Tables</div>
             </div>
             
             <div id="all-queries" class="tab-content active">
                 <h2>All SQL Queries</h2>
+                
+                <!-- Add filter controls -->
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label for="query-type-filter">Query Type:</label>
+                        <select id="query-type-filter" class="filter-select">
+                            <option value="all">All Types</option>
+"""
+        # Add options for each query type
+        for qtype in query_types.keys():
+            html += f'<option value="{qtype}">{qtype}</option>\n'
+
+        html += """
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="table-filter">Table Name:</label>
+                        <input type="text" id="table-filter" class="filter-input" placeholder="Filter by table">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="file-filter">Source File:</label>
+                        <input type="text" id="file-filter" class="filter-input" placeholder="Filter by file path">
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="text-filter">SQL Text:</label>
+                        <input type="text" id="text-filter" class="filter-input" placeholder="Search in SQL text">
+                    </div>
+                    
+                    <button class="clear-filters" onclick="clearFilters()">Clear Filters</button>
+                </div>
         """
         
-        # Add all queries
+        # Add all queries with expandable sections and data attributes for filtering
         for i, query in enumerate(queries, 1):
             oracle_badge = f'<span class="oracle-badge">Oracle: {query.oracle_feature_count}</span>' if query.is_oracle_specific else ''
+            tables_str = ', '.join(query.tables) if query.tables else 'Unknown'
+            query_type = query.query_type if hasattr(query, 'query_type') else "UNKNOWN"
             
             html += f"""
-                <div class="query">
-                    <h3>Query #{i} [{query.query_type}] {oracle_badge}</h3>
-                    <p>File: {query.source_file}</p>
-                    <p>Tables: {', '.join(query.tables) if query.tables else 'Unknown'}</p>
-                    <pre class="query-text">{query.query_text}</pre>
+                <div class="query expandable" 
+                     data-query-type="{query_type}" 
+                     data-tables="{tables_str.lower()}" 
+                     data-file="{query.source_file.lower()}" 
+                     id="query-{i}">
+                    <h3 onclick="toggleExpand(this.parentElement)">
+                        Query #{i} [{query_type}] {oracle_badge}
+                        <span class="toggle-icon">▼</span>
+                    </h3>
+                    <div class="content">
+                        <p>File: {query.source_file}</p>
+                        <p>Tables: {tables_str}</p>
+                        <pre class="query-text">{query.query_text}</pre>
             """
             
             if query.is_oracle_specific:
                 html += """
-                    <h4>Oracle Features</h4>
+                        <h4>Oracle Features</h4>
                 """
                 
                 for feature in query.oracle_features:
                     html += f"""
-                    <div class="oracle-feature">
-                        <strong>{feature['name']}</strong>: {feature['description']}
-                        <p>Example: <code>{feature['example']}</code></p>
-                    </div>
+                        <div class="oracle-feature">
+                            <strong>{feature['name']}</strong>: {feature['description']}
+                            <p>Example: <code>{feature['example']}</code></p>
+                        </div>
                     """
             
             html += """
+                    </div>
                 </div>
             """
         
@@ -486,9 +575,9 @@ class ReportGenerator:
                         if files:
                             html += """
                             <div class="tech-files">
-                                Files:<br> 
+                                Files:<br>
                             """
-                            for file in files[:10]:  # Show first 10 files - increased from 3
+                            for file in files[:10]:  # Show first 10 files
                                 html += f"<code>{file}</code><br>"
                             if len(files) > 10:
                                 html += f"... and {len(files)-10} more files"
@@ -529,12 +618,12 @@ class ReportGenerator:
                         if files:
                             html += """
                             <div class="tech-files">
-                                Files: 
+                                Files:<br> 
                             """
-                            for file in files[:3]:  # Show first 3 files
-                                html += f"<code>{file}</code>, "
-                            if len(files) > 3:
-                                html += f"... and {len(files)-3} more"
+                            for file in files[:10]:  # Show first 10 files instead of 3
+                                html += f"<code>{file}</code><br>"  # Use <br> instead of commas
+                            if len(files) > 10:
+                                html += f"... and {len(files)-10} more files"  # Adjusted count
                             html += """
                             </div>
                             """
@@ -548,21 +637,111 @@ class ReportGenerator:
             """
         
         # Connection Strings tab (if any were provided)
+        html += """
+        <div id="connection-strings" class="tab-content">
+            <h2>Connection Strings</h2>
+        """
+        
         if connection_strings:
-            html += """
-            <div id="connections" class="tab-content">
-                <h2>Database Connection Strings</h2>
-                <p>The following connection strings were detected in the source code:</p>
-            """
-            
-            for conn_str in connection_strings:
-                html += f"""
-                <div class="conn-string">{conn_str}</div>
-                """
+            for conn in connection_strings:
+                # Safely handle both dictionary and string formats
+                if isinstance(conn, dict):
+                    name = conn.get('name', 'Unnamed Connection')
+                    source = conn.get('source_file', 'Unknown')
+                    db_type = conn.get('database_type', 'Unknown database')
+                    conn_string = conn.get('connection_string', '')
+                else:
+                    # If it's not a dictionary (e.g., a string), use defaults
+                    name = 'Unnamed Connection'
+                    source = 'Unknown'
+                    db_type = 'Unknown database'
+                    conn_string = str(conn) if conn else ''
                 
-            html += """
-            </div>
+                # Display the connection string
+                html += f"""
+                <div class="conn-string-item">
+                    <h3>{name}</h3>
+                    <p><strong>Source:</strong> {source}</p>
+                    <p><strong>Type:</strong> {db_type}</p>
+                    <div class="conn-string">{self._sanitize_connection_string(conn_string)}</div>
+                </div>
+                """
+        else:
+            html += "<p>No connection strings found in this project.</p>"
+            
+        html += """
+        </div>
+        
+        <!-- High-Risk Tables tab -->
+        <div id="high-risk-tables" class="tab-content">
+            <h2>High-Risk Tables</h2>
+            <p>Tables referenced in multiple queries represent potential migration risks, especially in complex applications.</p>
+            
+            <table>
+                <tr>
+                    <th>Table Name</th>
+                    <th>Query Count</th>
+                    <th>Query Types</th>
+                    <th>Risk Level</th>
+                </tr>
+"""
+
+        # Calculate table statistics
+        table_stats = {}
+        for query in queries:
+            if hasattr(query, 'tables') and query.tables:
+                for table in query.tables:
+                    if table not in table_stats:
+                        table_stats[table] = {
+                            'count': 0,
+                            'query_types': set()
+                        }
+                    table_stats[table]['count'] += 1
+                    table_stats[table]['query_types'].add(query.query_type if hasattr(query, 'query_type') else "UNKNOWN")
+
+        # Sort tables by query count (highest first)
+        sorted_tables = sorted(table_stats.items(), key=lambda x: x[1]['count'], reverse=True)
+
+        # Add top 20 most referenced tables to the table
+        for table_name, stats in sorted_tables[:20]:
+            query_count = stats['count']
+            query_types = ', '.join(stats['query_types'])
+            
+            # Determine risk level based on query count
+            if query_count > 15:
+                risk_level = 'High'
+                risk_color = '#dc3545'  # Red
+            elif query_count > 8:
+                risk_level = 'Medium'
+                risk_color = '#ffc107'  # Yellow
+            else:
+                risk_level = 'Low'
+                risk_color = '#28a745'  # Green
+            
+            html += f"""
+                        <tr>
+                            <td><strong>{table_name}</strong></td>
+                            <td>{query_count}</td>
+                            <td>{query_types}</td>
+                            <td style="color: {risk_color}; font-weight: bold;">{risk_level}</td>
+                        </tr>
             """
+
+        html += """
+            </table>
+            
+            <div style="margin-top: 20px;">
+                <h3>Risk Assessment Criteria</h3>
+                <ul>
+                    <li><span style="color: #dc3545; font-weight: bold;">High Risk</span>: Tables referenced in more than 15 queries</li>
+                    <li><span style="color: #ffc107; font-weight: bold;">Medium Risk</span>: Tables referenced in 8-15 queries</li>
+                    <li><span style="color: #28a745; font-weight: bold;">Low Risk</span>: Tables referenced in fewer than 8 queries</li>
+                </ul>
+                <p><em>Note: Tables with different query types (SELECT, INSERT, UPDATE, DELETE) may require special attention 
+                during migration as they might have more complex dependencies.</em></p>
+            </div>
+        </div>
+        """
         
         # Add JavaScript for tab navigation
         html += """
@@ -584,6 +763,61 @@ class ReportGenerator:
                     // Activate the clicked tab
                     document.querySelector(`.tab[onclick="showTab('${tabId}')"]`).classList.add('active');
                 }
+                
+                // Toggle expandable sections
+                function toggleExpand(element) {
+                    element.classList.toggle('collapsed');
+                }
+                
+                // Filtering queries
+                function filterQueries() {
+                    const queryTypeFilter = document.getElementById('query-type-filter').value;
+                    const tableFilter = document.getElementById('table-filter').value.toLowerCase();
+                    const fileFilter = document.getElementById('file-filter').value.toLowerCase();
+                    const textFilter = document.getElementById('text-filter').value.toLowerCase();
+                    
+                    document.querySelectorAll('.query').forEach(query => {
+                        // Check if query matches all selected filters
+                        const matchesType = queryTypeFilter === 'all' || query.getAttribute('data-query-type') === queryTypeFilter;
+                        const matchesTable = tableFilter === '' || query.getAttribute('data-tables').includes(tableFilter);
+                        const matchesFile = fileFilter === '' || query.getAttribute('data-file').includes(fileFilter);
+                        const matchesText = textFilter === '' || query.querySelector('.query-text').textContent.toLowerCase().includes(textFilter);
+                        
+                        // Show or hide based on filter matches
+                        if (matchesType && matchesTable && matchesFile && matchesText) {
+                            query.style.display = '';
+                        } else {
+                            query.style.display = 'none';
+                        }
+                    });
+                }
+                
+                // Clear all filters
+                function clearFilters() {
+                    document.getElementById('query-type-filter').value = 'all';
+                    document.getElementById('table-filter').value = '';
+                    document.getElementById('file-filter').value = '';
+                    document.getElementById('text-filter').value = '';
+                    
+                    document.querySelectorAll('.query').forEach(query => {
+                        query.style.display = '';
+                    });
+                }
+                
+                // Initialize event listeners
+                document.addEventListener('DOMContentLoaded', function() {
+                    // Set up filter change listeners
+                    document.getElementById('query-type-filter').addEventListener('change', filterQueries);
+                    document.getElementById('table-filter').addEventListener('input', filterQueries);
+                    document.getElementById('file-filter').addEventListener('input', filterQueries);
+                    document.getElementById('text-filter').addEventListener('input', filterQueries);
+                    
+                    // Collapse all query sections initially except first 3
+                    const queries = document.querySelectorAll('.query.expandable');
+                    for (let i = 3; i < queries.length; i++) {
+                        queries[i].classList.add('collapsed');
+                    }
+                });
             </script>
         </body>
         </html>
@@ -640,6 +874,9 @@ class ReportGenerator:
     
     def _sanitize_connection_string(self, conn_str: str) -> str:
         """Sanitize connection string to hide sensitive information"""
+        if not conn_str or not isinstance(conn_str, str):
+            return ""
+            
         # Replace password in JDBC URLs
         sanitized = re.sub(r'password=([^;]+)', r'password=*****', conn_str, flags=re.IGNORECASE)
         

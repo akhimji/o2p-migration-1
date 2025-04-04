@@ -4,3 +4,4 @@ sql-code-analyzer/.venv/*
 *.pyc
 sql-code-analyzer/report.html
 sql-code-analyzer/report.json
+.DS_Store
