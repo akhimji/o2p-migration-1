@@ -486,12 +486,12 @@ class ReportGenerator:
                         if files:
                             html += """
                             <div class="tech-files">
-                                Files: 
+                                Files:<br> 
                             """
-                            for file in files[:3]:  # Show first 3 files
-                                html += f"<code>{file}</code>, "
-                            if len(files) > 3:
-                                html += f"... and {len(files)-3} more"
+                            for file in files[:10]:  # Show first 10 files - increased from 3
+                                html += f"<code>{file}</code><br>"
+                            if len(files) > 10:
+                                html += f"... and {len(files)-10} more files"
                             html += """
                             </div>
                             """
